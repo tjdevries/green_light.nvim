@@ -23,4 +23,4 @@ use 'tjdevries/green_light.nvim'
 
 Better go test highlighting (soon goto failed test, move between tests, etc.)
 
-[running_test](./media/simple_go_test.gif)
+![running_test](./media/simple_go_test.gif)
