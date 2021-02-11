@@ -94,7 +94,7 @@ local highlight_result = function(bufnr, name, test_obj) local highlight_name
     a.nvim_buf_add_highlight(bufnr, ns_gotest, highlight_name, extmark_row, 0, -1)
 end
 
-local bufnr = 195
+local bufnr = 124
 
 a.nvim_buf_clear_namespace(0, ns_gotest, 0, -1)
 a.nvim_buf_clear_namespace(bufnr, ns_gotest, 0, -1)
