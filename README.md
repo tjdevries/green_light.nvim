@@ -17,3 +17,10 @@ Install:
 use 'nvim-lua/plenary.nvim'
 use 'tjdevries/green_light.nvim'
 ```
+
+
+## What does it do?
+
+Better go test highlighting (soon goto failed test, move between tests, etc.)
+
+[running_test](./media/simple_go_test.gif)
