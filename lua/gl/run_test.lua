@@ -8,6 +8,9 @@ local a = vim.api
 ---@brief ]]
 
 local Job = require('plenary.job')
+-- local log = require('plenary.log')
+
+local gl_win = require('gl.window')
 
 local ns_gotest = a.nvim_create_namespace('gotest')
 
@@ -20,152 +23,249 @@ TestRuns = {
 
 TestOrdered = { test_run }
 
-local header_ids, count = {}, 0
-local get_header_id_start = function(header)
-  header = header .. "_start"
-  if not header_ids[header] then
-    count = count + 1
-    header_ids[header] = count
-  end
+local TestCase = {}
+TestCase.__index = TestCase
 
-  return header_ids[header]
+function TestCase:new(name, decoded)
+  return setmetatable({
+    name = name,
+    decoded = decoded,
+    result = "pending",
+    output = {},
+
+    extmark_start = TestCase:_get_id(name .. "_start"),
+    extmark_final = TestCase:_get_id(name .. "_final")
+  }, self)
 end
 
-local get_header_id_final = function(header)
-  header = header .. "_end"
-  if not header_ids[header] then
-    count = count + 1
-    header_ids[header] = count
+local test_case_ids, test_case_count = {}, 0
+function TestCase:_get_id(id)
+  if not test_case_ids[id] then
+    test_case_count = test_case_count + 1
+    test_case_ids[id] = test_case_count
   end
 
-  return header_ids[header]
+  return test_case_ids[id]
 end
 
-local add_header_row = function(bufnr, name, test_obj)
-  local line = "===== " .. name .. " ====="
+function TestCase:add_header(bufnr)
+  local line = "===== " .. self.name .. " ====="
 
   vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { line, "" })
-  a.nvim_buf_set_extmark(bufnr, ns_gotest, vim.api.nvim_buf_line_count(bufnr) - 2, 0, { id = get_header_id_start(name) })
-  a.nvim_buf_set_extmark(bufnr, ns_gotest, vim.api.nvim_buf_line_count(bufnr) - 1, 0, { id = get_header_id_final(name) })
+  a.nvim_buf_set_extmark(bufnr, ns_gotest, vim.api.nvim_buf_line_count(bufnr) - 2, 0, { id = self.extmark_start })
+  a.nvim_buf_set_extmark(bufnr, ns_gotest, vim.api.nvim_buf_line_count(bufnr) - 1, 0, { id = self.extmark_final })
 end
 
-local get_header_row = function(bufnr, name, final)
-  local extmark_id = final and get_header_id_final(name) or get_header_id_start(name)
+local get_extmark_row = function(bufnr, extmark_id)
   local extmark_locations = vim.api.nvim_buf_get_extmark_by_id(bufnr, ns_gotest, extmark_id, {})
   return extmark_locations[1]
 end
 
-local add_header_content = function(bufnr, name, contents)
-  local header_row = get_header_row(bufnr, name, false)
-  if not header_row then
-    print("Couldnt find for: ", name, contents)
-    return
+function TestCase:get_start_row(bufnr)
+  local extmark_id = self.extmark_start
+  return get_extmark_row(bufnr, extmark_id)
+end
+
+function TestCase:get_final_row(bufnr)
+  local extmark_id = self.extmark_final
+  return get_extmark_row(bufnr, extmark_id)
+end
+
+function TestCase:save_output(output)
+  for _, value in ipairs(vim.split(vim.trim(output), "\n")) do
+    table.insert(self.output, value)
+  end
+end
+
+function TestCase:show_output(bufnr)
+  self.displayed = true
+
+  local start_row = self:get_start_row(bufnr)
+  local final_row = self:get_final_row(bufnr)
+  if not start_row or not final_row then return print("Couldnt find for: ", self.name) end
+
+  a.nvim_buf_set_lines(bufnr, start_row + 1, final_row, false, self.output)
+end
+
+function TestCase:hide_output(bufnr)
+  self.displayed = false
+
+  local start_row = self:get_start_row(bufnr)
+  local final_row = self:get_final_row(bufnr)
+  if not start_row or not final_row then
+    return print("Couldnt find for: ", self.name)
   end
 
-  a.nvim_buf_set_lines(bufnr, header_row + 1, header_row + 1, false, contents)
+  a.nvim_buf_set_lines(bufnr, start_row + 1, final_row, false, {})
 end
 
-local append_header_content = function(bufnr, name, contents)
-  local header_row = get_header_row(bufnr, name, true)
-  if not header_row then
-    print("Couldnt find for: ", name, contents)
-    return
+function TestCase:toggle_output(bufnr)
+  if self.displayed then
+    self:hide_output(bufnr)
+  else
+    self:show_output(bufnr)
+  end
+end
+
+function TestCase:set_result(bufnr, result)
+  self.result = result
+
+  local highlight_name = 'Error'
+  if result == 'pass' then
+    highlight_name = 'GoTestSuccess'
+  elseif result == 'fail' then
+    highlight_name = 'GoTestFail'
   end
 
-  a.nvim_buf_set_lines(bufnr, header_row, header_row, false, contents)
+  a.nvim_buf_add_highlight(bufnr, ns_gotest, highlight_name, self:get_start_row(bufnr), 0, -1)
 end
 
-local highlight_result = function(bufnr, name, test_obj) local highlight_name
-    if test_obj.result == "pass" then
-      highlight_name = 'GoTestSuccess'
-    elseif test_obj.result == "fail" then
-      highlight_name = 'GoTestFail'
-    else
-      highlight_name = 'Error'
-      -- TODO
-    end
+-- {{{
+function TestCase:is_pass() return self.result == 'pass' end
+function TestCase:is_fail() return self.result == 'fail' end
+function TestCase:is_pend() return self.result == 'pending' end
+-- }}}
 
-    local extmark_row = get_header_row(bufnr, name)
-    if not extmark_row then
-      print("COULD NOT GET ROW", extmark_row, bufnr, name)
-      return
-    end
+local TestRun = {}
+TestRun.__index = TestRun
 
-    a.nvim_buf_add_highlight(bufnr, ns_gotest, highlight_name, extmark_row, 0, -1)
+function TestRun:new(opts)
+  return setmetatable({
+    test_pattern = opts.test_pattern,
+    file_pattern = opts.file_pattern or './...',
+    cwd = opts.cwd or vim.loop.cwd(),
+  }, self)
 end
 
-local bufnr = 124
+function TestRun:run()
+  TestRun._current_run = self
+  TestRun._current_bufnr = gl_win.get_bufnr()
 
-a.nvim_buf_clear_namespace(0, ns_gotest, 0, -1)
-a.nvim_buf_clear_namespace(bufnr, ns_gotest, 0, -1)
+  local bufnr = TestRun._current_bufnr
 
-local j = Job:new {
-  command = 'go',
-  args = { 'test', '-json', '-run', 'TestIndexer', '/home/tj/sourcegraph/lsif-go/internal/indexer/' },
-  -- args = { 'test', '-json', '-run', '', '/home/tj/sourcegraph/lsif-go/internal/...' },
+  self:set_keymaps(bufnr)
 
-  on_stdout = vim.schedule_wrap(function(_, line)
-    local decoded = vim.fn.json_decode(line)
+  a.nvim_buf_clear_namespace(0, ns_gotest, 0, -1)
+  a.nvim_buf_clear_namespace(bufnr, ns_gotest, 0, -1)
 
-    local action = decoded.Action
-    local test = decoded.Test or test_run
+  a.nvim_buf_set_lines(bufnr, 0, -1, false, {})
 
-    if action == "run" then
-      table.insert(TestOrdered, decoded.Test)
+  self.cases = {}
+  self.ordered = {}
 
-      TestRuns[test] = {
-        decoded = decoded,
-        output = {},
-        result = "pending",
-        extmark_id = get_header_id_start(test)
-      }
+  local args = { 'test', '-json' }
+  if self.test_pattern then
+    table.insert(args, '-run')
+    table.insert(args, self.test_pattern)
+  end
+  table.insert(args, self.file_pattern)
 
-      add_header_row(bufnr, test, TestRuns[test])
-      return
-    end
+  local j = Job:new {
+    command = 'go',
+    args = args,
+    cwd = self.cwd,
 
-    if not TestRuns[test] then
-      TestRuns[test] = {
-        decoded = decoded,
-        output = {},
-        result = "pending",
-        extmark_id = get_header_id_start(test)
-      }
-    end
+    on_stdout = vim.schedule_wrap(function(_, line)
+      local decoded = vim.fn.json_decode(line)
+      self:handle_line(bufnr, decoded)
+    end),
 
-    if action == "output" then
-      table.insert(TestRuns[test].output, decoded.Output)
-      append_header_content(bufnr, test, vim.split(vim.trim(decoded.Output), "\n"))
-    elseif action == "pass" then
-      TestRuns[test].result = "pass"
-      highlight_result(bufnr, test, TestRuns[test])
-    elseif action == "fail" then
-      TestRuns[test].result = "fail"
-      highlight_result(bufnr, test, TestRuns[test])
-    else
-      print("Missing this one", vim.inspect(decoded))
-    end
-  end),
-
-  on_exit = vim.schedule_wrap(function()
-    -- put all the things in a window
-    -- local results = self:result()
-
-    for _, name in pairs(TestOrdered) do
-      local test = TestRuns[name]
-
-      local contents = {}
-      for _, val in ipairs(vim.split(vim.inspect(test), "\n")) do
-        table.insert(contents, val)
+    on_exit = vim.schedule_wrap(function()
+      for _, test_case in pairs(self.cases) do
+        if test_case:is_pass() then
+          test_case:hide_output(bufnr)
+        end
       end
+      if true then return end
 
-      -- add_header_content(bufnr, name, contents)
+      -- put all the things in a window
+      -- local results = self:result()
+
+      for _, name in pairs(TestOrdered) do
+        local test = TestRuns[name]
+
+        local contents = {}
+        for _, val in ipairs(vim.split(vim.inspect(test), "\n")) do
+          table.insert(contents, val)
+        end
+
+        -- add_header_content(bufnr, name, contents)
+      end
+    end),
+  }
+
+  j:start()
+end
+
+function TestRun:add_case(bufnr, test_name, decoded)
+  table.insert(self.ordered, decoded.Test)
+
+  self.cases[test_name] = TestCase:new(test_name, decoded)
+  self.cases[test_name]:add_header(bufnr)
+
+  return self.cases[test_name]
+end
+
+function TestRun:handle_line(bufnr, decoded)
+  local action = decoded.Action
+  local test_name = decoded.Test or test_run
+
+  if action == "run" then
+    return self:add_case(bufnr, test_name, decoded)
+  end
+
+  local test_case = self.cases[test_name]
+  if not test_case then
+    test_case = self:add_case(bufnr, test_name, decoded)
+  end
+
+  if action == "output" then
+    test_case:save_output(decoded.Output)
+  elseif action == "fail" or action == "pass" then
+    test_case:set_result(bufnr, action)
+
+    if test_case:is_fail() then
+      test_case:show_output(bufnr)
     end
-  end),
+  else
+    print("Missing this one", vim.inspect(decoded))
+  end
+end
+
+function TestRun:find_test_case(line)
+  local row = line - 1
+
+  while row > 0 do
+    for _, test_case in pairs(self.cases) do
+      if test_case:get_start_row() == row then
+        return test_case
+      end
+    end
+
+    row = row - 1
+  end
+
+  return
+end
+
+function TestRun:set_keymaps(bufnr)
+  vim.api.nvim_buf_set_keymap(bufnr, 'n', '<CR>', ':lua require("gl.run_test").toggle_display()<CR>', { noremap = true, silent = true })
+end
+
+function TestRun.toggle_display()
+  local run = assert(TestRun._current_run, "Must have an existing run")
+
+  local test_case = run:find_test_case(vim.api.nvim_win_get_cursor(0)[1])
+  test_case:toggle_output(TestRun._current_bufnr)
+
+  if not test_case.displayed then
+    vim.api.nvim_win_set_cursor(0, { test_case:get_start_row() + 1, 0 })
+  end
+end
+
+return {
+  TestCase = TestCase,
+  TestRun = TestRun,
+
+  toggle_display = TestRun.toggle_display
 }
-
-print("ns_gotest:", ns_gotest)
-vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
-
-j:start()
--- j:wait()
