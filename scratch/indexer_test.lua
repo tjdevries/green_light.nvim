@@ -1,3 +1,5 @@
+RELOAD('gl.go_mod')
+
 local TestRun = R('gl.run_test').TestRun
 
 local run = TestRun:new {

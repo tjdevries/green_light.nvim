@@ -10,6 +10,7 @@ local a = vim.api
 local Job = require('plenary.job')
 -- local log = require('plenary.log')
 
+local gl_mod = require('gl.go_mod')
 local gl_win = require('gl.window')
 
 local ns_gotest = a.nvim_create_namespace('gotest')
@@ -29,10 +30,12 @@ TestCase.__index = TestCase
 function TestCase:new(name, decoded)
   return setmetatable({
     name = name,
-    decoded = decoded,
+    package = decoded.Package,
+
     result = "pending",
     output = {},
 
+    messages = { decoded, },
     extmark_start = TestCase:_get_id(name .. "_start"),
     extmark_final = TestCase:_get_id(name .. "_final")
   }, self)
@@ -46,6 +49,10 @@ function TestCase:_get_id(id)
   end
 
   return test_case_ids[id]
+end
+
+function TestCase:insert_message(message)
+  table.insert(self.messages, message)
 end
 
 function TestCase:add_header(bufnr)
@@ -77,14 +84,17 @@ function TestCase:save_output(output)
   end
 end
 
-function TestCase:show_output(bufnr)
-  self.displayed = true
-
+function TestCase:_show(bufnr, contents)
   local start_row = self:get_start_row(bufnr)
   local final_row = self:get_final_row(bufnr)
   if not start_row or not final_row then return print("Couldnt find for: ", self.name) end
 
-  a.nvim_buf_set_lines(bufnr, start_row + 1, final_row, false, self.output)
+  a.nvim_buf_set_lines(bufnr, start_row + 1, final_row, false, contents)
+end
+
+function TestCase:show_output(bufnr)
+  self.displayed = true
+  self:_show(bufnr, self.output)
 end
 
 function TestCase:hide_output(bufnr)
@@ -120,6 +130,10 @@ function TestCase:set_result(bufnr, result)
   a.nvim_buf_add_highlight(bufnr, ns_gotest, highlight_name, self:get_start_row(bufnr), 0, -1)
 end
 
+function TestCase:get_directory(module_info)
+  return gl_mod.find_path(module_info, self.package)
+end
+
 -- {{{
 function TestCase:is_pass() return self.result == 'pass' end
 function TestCase:is_fail() return self.result == 'fail' end
@@ -130,10 +144,13 @@ local TestRun = {}
 TestRun.__index = TestRun
 
 function TestRun:new(opts)
+  local cwd = opts.cwd or vim.loop.cwd()
   return setmetatable({
     test_pattern = opts.test_pattern,
     file_pattern = opts.file_pattern or './...',
-    cwd = opts.cwd or vim.loop.cwd(),
+    cwd = cwd,
+
+    module_info = gl_mod.get(cwd),
   }, self)
 end
 
@@ -175,6 +192,8 @@ function TestRun:run()
         if test_case:is_pass() then
           test_case:hide_output(bufnr)
         end
+
+        -- test_case:_show(bufnr, { test_case:get_file(self.module_info) })
       end
       if true then return end
 
@@ -219,6 +238,8 @@ function TestRun:handle_line(bufnr, decoded)
     test_case = self:add_case(bufnr, test_name, decoded)
   end
 
+  test_case:insert_message(decoded)
+
   if action == "output" then
     test_case:save_output(decoded.Output)
   elseif action == "fail" or action == "pass" then
@@ -249,7 +270,31 @@ function TestRun:find_test_case(line)
 end
 
 function TestRun:set_keymaps(bufnr)
-  vim.api.nvim_buf_set_keymap(bufnr, 'n', '<CR>', ':lua require("gl.run_test").toggle_display()<CR>', { noremap = true, silent = true })
+  local opts = { noremap = true, silent = true }
+
+  vim.api.nvim_buf_set_keymap(
+    bufnr, 'n', '<CR>', ':lua require("gl.test").toggle_display()<CR>', opts
+  )
+
+  vim.api.nvim_buf_set_keymap(
+    bufnr, 'n', 'gf', ':lua require("gl.test").goto_file()<CR>', opts
+  )
+end
+
+-- TODO: Still not sure how I want to actually open this.
+function TestRun.goto_file()
+  local run = assert(TestRun._current_run, "Must have an existing run")
+
+  local test_case = run:find_test_case(vim.api.nvim_win_get_cursor(0)[1])
+
+  local test_dir = test_case:get_directory(run.module_info)
+  local failed_file = vim.fn.expand("<cfile>")
+  local failed_line = vim.split(vim.fn.expand("<cWORD>"), ":")[2]
+
+  vim.cmd('split ' .. test_dir .. "/" .. failed_file)
+  if failed_line then
+    vim.api.nvim_win_set_cursor(0, { tonumber(failed_line), 1 })
+  end
 end
 
 function TestRun.toggle_display()
@@ -267,5 +312,6 @@ return {
   TestCase = TestCase,
   TestRun = TestRun,
 
-  toggle_display = TestRun.toggle_display
+  toggle_display = TestRun.toggle_display,
+  goto_file = TestRun.goto_file,
 }
