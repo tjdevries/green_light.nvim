@@ -1,6 +1,6 @@
-RELOAD('gl.go_mod')
+RELOAD('gl')
 
-local TestRun = R('gl.run_test').TestRun
+local TestRun = R('gl.test').TestRun
 
 local run = TestRun:new {
   test_pattern = 'TestIndexer',

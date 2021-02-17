@@ -16,13 +16,6 @@ local gl_win = require('gl.window')
 local ns_gotest = a.nvim_create_namespace('gotest')
 
 local test_run = "~ Go Test ~"
-TestRuns = {
-  [test_run] = {
-    output = {}
-  }
-}
-
-TestOrdered = { test_run }
 
 local TestCase = {}
 TestCase.__index = TestCase
@@ -155,6 +148,8 @@ function TestRun:new(opts)
 end
 
 function TestRun:run()
+  gl_win.float()
+
   TestRun._current_run = self
   TestRun._current_bufnr = gl_win.get_bufnr()
 
@@ -194,21 +189,6 @@ function TestRun:run()
         end
 
         -- test_case:_show(bufnr, { test_case:get_file(self.module_info) })
-      end
-      if true then return end
-
-      -- put all the things in a window
-      -- local results = self:result()
-
-      for _, name in pairs(TestOrdered) do
-        local test = TestRuns[name]
-
-        local contents = {}
-        for _, val in ipairs(vim.split(vim.inspect(test), "\n")) do
-          table.insert(contents, val)
-        end
-
-        -- add_header_content(bufnr, name, contents)
       end
     end),
   }
@@ -301,6 +281,8 @@ function TestRun.toggle_display()
   local run = assert(TestRun._current_run, "Must have an existing run")
 
   local test_case = run:find_test_case(vim.api.nvim_win_get_cursor(0)[1])
+  if not test_case then return end
+
   test_case:toggle_output(TestRun._current_bufnr)
 
   if not test_case.displayed then

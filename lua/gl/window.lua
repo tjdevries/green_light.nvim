@@ -32,7 +32,13 @@ M.vsplit = function()
   vim.cmd('40 vsplit ' .. vim.fn.expand(string.format("#%s", bufnr)))
 end
 
--- M.reset()
-M.vsplit()
+M.float = function()
+  local bufnr = M.get_bufnr()
+  M.hide(bufnr)
+
+  require('plenary.window.float').percentage_range_window(.5, .5, {
+    bufnr = bufnr
+  })
+end
 
 return M
