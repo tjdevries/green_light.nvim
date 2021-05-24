@@ -1,3 +1,9 @@
+-- Reminder to myself
+--  Probably can make a mapping that finds alternate file
+--  With alternate file
+--  can run tests for entire file automatically.
+--      SeemsGood :)
+
 local a = vim.api
 
 ---@brief [[
@@ -148,7 +154,7 @@ function TestRun:new(opts)
 end
 
 function TestRun:run()
-  gl_win.float()
+  gl_win.vsplit()
 
   TestRun._current_run = self
   TestRun._current_bufnr = gl_win.get_bufnr()
