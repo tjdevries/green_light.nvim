@@ -13,13 +13,13 @@ local a = vim.api
 ---     - GoTestFail   : Used to highlight failed tests
 ---@brief ]]
 
-local Job = require('plenary.job')
+local Job = require "plenary.job"
 -- local log = require('plenary.log')
 
-local gl_mod = require('gl.go_mod')
-local gl_win = require('gl.window')
+local gl_mod = require "gl.go_mod"
+local gl_win = require "gl.window"
 
-local ns_gotest = a.nvim_create_namespace('gotest')
+local ns_gotest = a.nvim_create_namespace "gotest"
 
 local test_run = "~ Go Test ~"
 
@@ -34,9 +34,9 @@ function TestCase:new(name, decoded)
     result = "pending",
     output = {},
 
-    messages = { decoded, },
+    messages = { decoded },
     extmark_start = TestCase:_get_id(name .. "_start"),
-    extmark_final = TestCase:_get_id(name .. "_final")
+    extmark_final = TestCase:_get_id(name .. "_final"),
   }, self)
 end
 
@@ -55,7 +55,7 @@ function TestCase:insert_message(message)
 end
 
 function TestCase:add_header(bufnr)
-  local line = "===== " .. self.name .. " ====="
+  local line = "= " .. self.name .. " ="
 
   vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { line, "" })
   a.nvim_buf_set_extmark(bufnr, ns_gotest, vim.api.nvim_buf_line_count(bufnr) - 2, 0, { id = self.extmark_start })
@@ -86,7 +86,9 @@ end
 function TestCase:_show(bufnr, contents)
   local start_row = self:get_start_row(bufnr)
   local final_row = self:get_final_row(bufnr)
-  if not start_row or not final_row then return print("Couldnt find for: ", self.name) end
+  if not start_row or not final_row then
+    return print("Couldnt find for: ", self.name)
+  end
 
   a.nvim_buf_set_lines(bufnr, start_row + 1, final_row, false, contents)
 end
@@ -119,11 +121,11 @@ end
 function TestCase:set_result(bufnr, result)
   self.result = result
 
-  local highlight_name = 'Error'
-  if result == 'pass' then
-    highlight_name = 'GoTestSuccess'
-  elseif result == 'fail' then
-    highlight_name = 'GoTestFail'
+  local highlight_name = "Error"
+  if result == "pass" then
+    highlight_name = "GoTestSuccess"
+  elseif result == "fail" then
+    highlight_name = "GoTestFail"
   end
 
   a.nvim_buf_add_highlight(bufnr, ns_gotest, highlight_name, self:get_start_row(bufnr), 0, -1)
@@ -134,9 +136,15 @@ function TestCase:get_directory(module_info)
 end
 
 -- {{{
-function TestCase:is_pass() return self.result == 'pass' end
-function TestCase:is_fail() return self.result == 'fail' end
-function TestCase:is_pend() return self.result == 'pending' end
+function TestCase:is_pass()
+  return self.result == "pass"
+end
+function TestCase:is_fail()
+  return self.result == "fail"
+end
+function TestCase:is_pend()
+  return self.result == "pending"
+end
 -- }}}
 
 local TestRun = {}
@@ -146,7 +154,7 @@ function TestRun:new(opts)
   local cwd = opts.cwd or vim.loop.cwd()
   return setmetatable({
     test_pattern = opts.test_pattern,
-    file_pattern = opts.file_pattern or './...',
+    file_pattern = opts.file_pattern or "./...",
     cwd = cwd,
 
     module_info = gl_mod.get(cwd),
@@ -171,15 +179,15 @@ function TestRun:run()
   self.cases = {}
   self.ordered = {}
 
-  local args = { 'test', '-json' }
+  local args = { "test", "-json" }
   if self.test_pattern then
-    table.insert(args, '-run')
+    table.insert(args, "-run")
     table.insert(args, self.test_pattern)
   end
   table.insert(args, self.file_pattern)
 
   local j = Job:new {
-    command = 'go',
+    command = "go",
     args = args,
     cwd = self.cwd,
 
@@ -258,13 +266,9 @@ end
 function TestRun:set_keymaps(bufnr)
   local opts = { noremap = true, silent = true }
 
-  vim.api.nvim_buf_set_keymap(
-    bufnr, 'n', '<CR>', ':lua require("gl.test").toggle_display()<CR>', opts
-  )
+  vim.api.nvim_buf_set_keymap(bufnr, "n", "<CR>", ':lua require("gl.test").toggle_display()<CR>', opts)
 
-  vim.api.nvim_buf_set_keymap(
-    bufnr, 'n', 'gf', ':lua require("gl.test").goto_file()<CR>', opts
-  )
+  vim.api.nvim_buf_set_keymap(bufnr, "n", "gf", ':lua require("gl.test").goto_file()<CR>', opts)
 end
 
 -- TODO: Still not sure how I want to actually open this.
@@ -274,10 +278,10 @@ function TestRun.goto_file()
   local test_case = run:find_test_case(vim.api.nvim_win_get_cursor(0)[1])
 
   local test_dir = test_case:get_directory(run.module_info)
-  local failed_file = vim.fn.expand("<cfile>")
-  local failed_line = vim.split(vim.fn.expand("<cWORD>"), ":")[2]
+  local failed_file = vim.fn.expand "<cfile>"
+  local failed_line = vim.split(vim.fn.expand "<cWORD>", ":")[2]
 
-  vim.cmd('split ' .. test_dir .. "/" .. failed_file)
+  vim.cmd("split " .. test_dir .. "/" .. failed_file)
   if failed_line then
     vim.api.nvim_win_set_cursor(0, { tonumber(failed_line), 1 })
   end
@@ -287,7 +291,9 @@ function TestRun.toggle_display()
   local run = assert(TestRun._current_run, "Must have an existing run")
 
   local test_case = run:find_test_case(vim.api.nvim_win_get_cursor(0)[1])
-  if not test_case then return end
+  if not test_case then
+    return
+  end
 
   test_case:toggle_output(TestRun._current_bufnr)
 

@@ -10,7 +10,8 @@ local TestRun = R("gl.test").TestRun
 
 local run = TestRun:new {
   file_pattern = "./...",
-  cwd = "./test/green_light/",
+  test_pattern = "TestIndexer/check_external_nested",
+  -- cwd = "./test/green_light/",
 }
 
 run:run()

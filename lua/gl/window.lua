@@ -29,6 +29,12 @@ end
 M.vsplit = function()
   local bufnr = M.get_bufnr()
 
+  for _, win_id in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_buf(win_id) == bufnr then
+      return
+    end
+  end
+
   M.hide(bufnr)
   vim.cmd("80 vsplit " .. vim.fn.expand(string.format("#%s", bufnr)))
   vim.api.nvim_win_set_option(0, "winfixwidth", true)
